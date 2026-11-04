@@ -20,6 +20,9 @@ const DOLLAR_RE = /\$\s?(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?/;
 const WORD_AMOUNT_RE = /\b(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d{1,2}))?\s*(?:dollars|usd)\b/i;
 const LEADING_VERB_RE = /^\s*(bill|invoice|charge|send)\b\s*/i;
 const TRAILING_DATE_WORD_RE = /\s*\b(due|by|on|before)\s*$/i;
+// Commas etc. left at the edges of a chunk, e.g. "logo design," from
+// "for logo design, due Friday" or a lone "," between two removed tokens.
+const EDGE_PUNCT_RE = /^[\s,;:.]+|[\s,;:.]+$/g;
 
 // Placeholder left where we cut a token out, so the leftover text stays split
 // into separate chunks instead of running together.
@@ -54,7 +57,9 @@ export function parseInvoice(text: string, now: Date = new Date()): InvoiceDraft
   rest = rest.replace(LEADING_VERB_RE, "");
   const chunks = rest
     .split(GAP)
-    .map((c) => c.replace(TRAILING_DATE_WORD_RE, "").trim())
+    // Strip punctuation both before and after removing "due", so
+    // "design, due" and "design due," both end up as "design".
+    .map((c) => c.replace(EDGE_PUNCT_RE, "").replace(TRAILING_DATE_WORD_RE, "").replace(EDGE_PUNCT_RE, ""))
     .filter(Boolean);
 
   const forIndex = chunks.findIndex((c) => /^for\b/i.test(c));
