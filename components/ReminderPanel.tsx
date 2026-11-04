@@ -2,6 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { Check, Close, Send } from "@/components/icons";
+import { btnOutline, btnPrimary, btnSecondary, eyebrow, input } from "@/components/ui";
+import { formatMoney } from "@/lib/format";
 import { MAX_MESSAGE, type ReminderTone, TONES, buildReminder, daysLate, validateReminder } from "@/lib/reminders";
 
 type Props = {
@@ -17,7 +20,7 @@ type Props = {
 const TONE_LABEL: Record<ReminderTone, string> = { friendly: "Friendly", firm: "Firm" };
 
 /**
- * "Remind" button + a modal to review, edit, and approve a reminder.
+ * "Remind" button + a side drawer to review, edit, and approve a reminder.
  * Nothing is sent until Approve: opening, switching tone, and editing are all
  * local state. Only approve() talks to the server.
  */
@@ -104,111 +107,150 @@ export default function ReminderPanel(props: Props) {
   }
 
   const tooLong = message.trim().length > MAX_MESSAGE;
+  const titleId = `remind-title-${props.invoiceId}`;
+
+  function close() {
+    setOpen(false);
+    if (sentButUnrecorded) router.refresh();
+  }
 
   return (
     <>
-      <button
-        type="button"
-        onClick={openPanel}
-        className="rounded-md border border-zinc-300 px-2 py-0.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
-      >
+      <button type="button" onClick={openPanel} className={`${btnOutline} px-4 py-1.5 text-sm`}>
         Remind
+        <span className="sr-only"> {props.clientName}</span>
       </button>
 
+      {/*
+        Still a native modal <dialog> (focus trap, Esc, inert page behind it),
+        just pinned to the right edge as a drawer.
+      */}
       <dialog
         ref={dialogRef}
-        aria-labelledby={`remind-title-${props.invoiceId}`}
+        aria-labelledby={titleId}
         // Esc / backdrop close → keep React state in sync. Block it mid-send.
         onCancel={(e) => {
           if (sending) e.preventDefault();
         }}
         onClose={() => setOpen(false)}
-        className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-zinc-900/40"
+        className="m-0 ml-auto h-dvh max-h-none w-full max-w-md bg-white p-0 text-navy shadow-pop backdrop:bg-navy/30 backdrop:backdrop-blur-sm motion-safe:animate-drawer-in"
       >
         {open && facts && (
           <form
             method="dialog"
-            className="space-y-4 p-6"
+            className="flex h-full flex-col"
             onSubmit={(e) => {
               e.preventDefault();
               approve();
             }}
           >
-            <div>
-              <h2 id={`remind-title-${props.invoiceId}`} className="text-base font-semibold">
-                Remind {props.clientName}
-              </h2>
-              <p className="mt-1 text-xs text-zinc-500">
-                {props.invoiceNumber ? `${props.invoiceNumber} · ` : ""}
-                {facts.daysLate} {facts.daysLate === 1 ? "day" : "days"} late
-              </p>
-            </div>
-
-            <fieldset>
-              <legend className="mb-1.5 text-xs font-medium text-zinc-500">Tone</legend>
-              <div className="inline-flex rounded-lg border border-zinc-200 p-0.5">
-                {TONES.map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    aria-pressed={tone === t}
-                    onClick={() => changeTone(t)}
-                    disabled={sending}
-                    className={`rounded-md px-3 py-1 text-sm ${
-                      tone === t ? "bg-zinc-900 text-white" : "text-zinc-600 hover:bg-zinc-100"
-                    }`}
-                  >
-                    {TONE_LABEL[t]}
-                  </button>
-                ))}
+            <div className="flex items-start justify-between gap-4 px-6 pb-4 pt-7">
+              <div>
+                <p className={`${eyebrow} text-ink-muted`}>Payment reminder</p>
+                <h2 id={titleId} className="mt-1.5 text-2xl tracking-tight">
+                  Send a gentle nudge
+                </h2>
               </div>
-            </fieldset>
-
-            <label className="block">
-              <span className="mb-1.5 flex justify-between text-xs font-medium text-zinc-500">
-                <span>Message</span>
-                <span className={tooLong ? "text-red-600" : ""}>
-                  {message.trim().length}/{MAX_MESSAGE}
-                </span>
-              </span>
-              <textarea
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-                rows={9}
-                disabled={sending || sentButUnrecorded}
-                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-zinc-900 focus:outline-none"
-              />
-            </label>
-
-            <p className="text-xs text-zinc-500">
-              Approving re-sends the Stripe invoice email and saves this message on the invoice.
-            </p>
-
-            {error && (
-              <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-                {error}
-              </p>
-            )}
-
-            <div className="flex justify-end gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setOpen(false);
-                  if (sentButUnrecorded) router.refresh();
-                }}
+                onClick={close}
                 disabled={sending}
-                className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-600 hover:bg-zinc-100"
+                aria-label="Close"
+                className="grid size-9 place-items-center rounded-control text-ink-muted transition-colors hover:bg-lavender-soft hover:text-navy disabled:opacity-50"
               >
+                <Close className="size-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 space-y-6 overflow-y-auto px-6 pb-6">
+              <dl className="grid grid-cols-3 gap-4 rounded-card border border-line px-5 py-4">
+                <Fact label="Client">
+                  {props.clientName}
+                  {props.invoiceNumber && (
+                    <span className="block text-xs font-normal text-ink-muted">{props.invoiceNumber}</span>
+                  )}
+                </Fact>
+                <Fact label="Amount">{formatMoney(props.amountCents, props.currency, { short: true })}</Fact>
+                <Fact label="Late by">
+                  {facts.daysLate} {facts.daysLate === 1 ? "day" : "days"}
+                </Fact>
+              </dl>
+
+              <div role="group" aria-labelledby={`${titleId}-tone`} className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p id={`${titleId}-tone`} className="text-sm font-semibold">
+                    Tone
+                  </p>
+                  <p className="text-xs text-ink-muted">Choose how direct you&apos;d like to be.</p>
+                </div>
+                <div className="inline-flex rounded-control bg-lavender/60 p-1">
+                  {TONES.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      aria-pressed={tone === t}
+                      onClick={() => changeTone(t)}
+                      disabled={sending}
+                      className={`rounded-lg px-3.5 py-1.5 text-sm font-semibold transition-colors ${
+                        tone === t ? "bg-white text-purple shadow-card" : "text-purple hover:bg-white/50"
+                      }`}
+                    >
+                      {TONE_LABEL[t]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <label className="block">
+                <span className="mb-2 flex justify-between text-sm">
+                  <span className="font-semibold">Message</span>
+                  <span className={`text-xs ${tooLong ? "text-danger" : "text-ink-muted"}`}>
+                    {message.trim().length}/{MAX_MESSAGE}
+                  </span>
+                </span>
+                <textarea
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                  rows={9}
+                  disabled={sending || sentButUnrecorded}
+                  aria-invalid={tooLong}
+                  className={`${input} px-4 py-3 text-sm leading-relaxed disabled:opacity-70`}
+                />
+              </label>
+
+              <div className="flex gap-3 rounded-card bg-aqua-soft px-4 py-3.5">
+                <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-white text-navy">
+                  <Check className="size-3.5" />
+                </span>
+                <div className="text-xs">
+                  <p className="text-sm font-semibold">Nothing sends until you approve.</p>
+                  <p className="mt-0.5 text-ink-muted">
+                    Approving re-sends the Stripe invoice email and saves this message on the invoice.
+                  </p>
+                </div>
+              </div>
+
+              {error && (
+                <p role="alert" className="rounded-control bg-danger-soft px-4 py-3 text-sm text-danger">
+                  {error}
+                </p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-line px-6 py-4">
+              <button type="button" onClick={close} disabled={sending} className={`${btnSecondary} px-5 py-2.5`}>
                 {sentButUnrecorded ? "Close" : "Cancel"}
               </button>
               {!sentButUnrecorded && (
-                <button
-                  type="submit"
-                  disabled={sending || tooLong || !message.trim()}
-                  className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50"
-                >
-                  {sending ? "Sending…" : "Approve & send"}
+                <button type="submit" disabled={sending || tooLong || !message.trim()} className={`${btnPrimary} px-5 py-2.5`}>
+                  {sending ? (
+                    "Sending…"
+                  ) : (
+                    <>
+                      Approve &amp; send
+                      <Send />
+                    </>
+                  )}
                 </button>
               )}
             </div>
@@ -216,5 +258,14 @@ export default function ReminderPanel(props: Props) {
         )}
       </dialog>
     </>
+  );
+}
+
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs text-ink-muted">{label}</dt>
+      <dd className="mt-1 break-words text-sm font-semibold">{children}</dd>
+    </div>
   );
 }

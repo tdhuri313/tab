@@ -20,6 +20,8 @@ export type DashboardInvoice = {
   closedAt: number | null;
   created: number;
   hostedUrl: string | null;
+  /** Stripe's PDF download link (finalized invoices only). */
+  pdfUrl: string | null;
   /** When the last reminder was approved and sent (from invoice metadata). */
   lastReminderAt: number | null;
 };
@@ -73,4 +75,52 @@ export function compareUrgency(a: DashboardInvoice, b: DashboardInvoice): number
 
   // Tie-breaker so the order is stable: newest created first.
   return b.created - a.created;
+}
+
+export const STATUS_LABEL: Record<DashboardStatus, string> = {
+  overdue: "Overdue",
+  sent: "Sent",
+  draft: "Draft",
+  paid: "Paid",
+  void: "Void",
+};
+
+export type Totals = { cents: number; count: number };
+
+export type InvoiceSummary = {
+  /** Open invoices, overdue or not. */
+  outstanding: Totals;
+  overdue: Totals;
+  /** Paid since the 1st of the current month (UTC, like due dates). */
+  paidThisMonth: Totals;
+  currency: string;
+};
+
+/**
+ * Totals for the dashboard stat cards and the home-page pill. Only invoices
+ * in `currency` count: Tab only creates USD invoices, and adding dollars to
+ * euros would give a meaningless number.
+ */
+export function summarize(invoices: DashboardInvoice[], nowSeconds: number, currency = "usd"): InvoiceSummary {
+  const now = new Date(nowSeconds * 1000);
+  const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000;
+
+  const summary: InvoiceSummary = {
+    outstanding: { cents: 0, count: 0 },
+    overdue: { cents: 0, count: 0 },
+    paidThisMonth: { cents: 0, count: 0 },
+    currency,
+  };
+  const add = (t: Totals, inv: DashboardInvoice) => {
+    t.cents += inv.amountCents;
+    t.count += 1;
+  };
+
+  for (const inv of invoices) {
+    if (inv.currency !== currency) continue;
+    if (inv.status === "sent" || inv.status === "overdue") add(summary.outstanding, inv);
+    if (inv.status === "overdue") add(summary.overdue, inv);
+    if (inv.status === "paid" && inv.closedAt !== null && inv.closedAt >= monthStart) add(summary.paidThisMonth, inv);
+  }
+  return summary;
 }

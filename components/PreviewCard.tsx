@@ -1,5 +1,8 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+import { Check, Send } from "@/components/icons";
+import { btnPrimary, btnText, card, eyebrow, input } from "@/components/ui";
 import { type InvoiceDraft, validateDraft } from "@/lib/parseInvoice";
 
 type Props = {
@@ -15,75 +18,89 @@ export default function PreviewCard({ draft, onChange, onConfirm, onBack, sendin
   const errors = validateDraft(draft);
   const valid = Object.keys(errors).length === 0;
 
+  // The textarea that had focus is gone, so move focus to this step's heading
+  // (keyboard and screen-reader users land at the top of the new content).
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => headingRef.current?.focus(), []);
+
   const set = (field: keyof InvoiceDraft) => (e: React.ChangeEvent<HTMLInputElement>) =>
     onChange({ ...draft, [field]: e.target.value });
 
   return (
     <form
-      className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm"
+      className={`${card} p-6 sm:p-10`}
       onSubmit={(e) => {
         e.preventDefault();
         if (valid && !sending) onConfirm();
       }}
     >
-      <h2 className="mb-4 text-sm font-medium text-zinc-500">Check the details</h2>
+      <p className={`${eyebrow} flex items-center gap-2.5 text-purple`}>
+        <span className="grid size-7 place-items-center rounded-lg bg-lavender-soft">
+          <Check />
+        </span>
+        Almost ready
+      </p>
+      <h1 ref={headingRef} tabIndex={-1} className="mt-5 text-3xl tracking-tight focus-visible:outline-none sm:text-[2rem]">
+        Check the details
+      </h1>
+      <p className="mt-3 text-ink-muted">Everything look right? You can edit any field.</p>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="mt-8 grid gap-5 border-t border-line pt-8 sm:grid-cols-2">
         <Field label="Client name" error={errors.name}>
-          <input className={inputClass(errors.name)} value={draft.name} onChange={set("name")} />
+          <input className={fieldClass} aria-invalid={!!errors.name} value={draft.name} onChange={set("name")} />
         </Field>
         <Field label="Email" error={errors.email}>
-          <input type="email" className={inputClass(errors.email)} value={draft.email} onChange={set("email")} />
+          <input type="email" className={fieldClass} aria-invalid={!!errors.email} value={draft.email} onChange={set("email")} />
         </Field>
         <Field label="Amount (USD)" error={errors.amount}>
           <div className="relative">
-            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400">$</span>
+            <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-navy">$</span>
             <input
               inputMode="decimal"
-              className={`${inputClass(errors.amount)} pl-7`}
+              className={`${input} py-2.5 pl-7 pr-3.5`}
+              aria-invalid={!!errors.amount}
               value={draft.amount}
               onChange={set("amount")}
             />
           </div>
         </Field>
         <Field label="Due date" error={errors.dueDate}>
-          <input type="date" className={inputClass(errors.dueDate)} value={draft.dueDate} onChange={set("dueDate")} />
+          <input type="date" className={fieldClass} aria-invalid={!!errors.dueDate} value={draft.dueDate} onChange={set("dueDate")} />
         </Field>
         <div className="sm:col-span-2">
           <Field label="Description" error={errors.description}>
-            <input className={inputClass(errors.description)} value={draft.description} onChange={set("description")} />
+            <input className={fieldClass} aria-invalid={!!errors.description} value={draft.description} onChange={set("description")} />
           </Field>
         </div>
       </div>
 
-      <div className="mt-6 flex items-center justify-end gap-3">
-        <button type="button" onClick={onBack} disabled={sending} className="rounded-lg px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-50">
-          Edit text
+      <div className="mt-8 flex items-center justify-between gap-4 border-t border-line pt-6">
+        <button type="button" onClick={onBack} disabled={sending} className={`${btnText} px-1 text-sm`}>
+          Edit sentence
         </button>
-        <button
-          type="submit"
-          disabled={!valid || sending}
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {sending ? "Sending…" : "Send invoice"}
+        <button type="submit" disabled={!valid || sending} className={`${btnPrimary} px-5 py-3`}>
+          {sending ? (
+            "Sending…"
+          ) : (
+            <>
+              Send invoice
+              <Send />
+            </>
+          )}
         </button>
       </div>
     </form>
   );
 }
 
+const fieldClass = `${input} px-3.5 py-2.5`;
+
 function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-medium text-zinc-600">{label}</span>
+      <span className="mb-2 block text-sm font-medium text-ink-muted">{label}</span>
       {children}
-      {error && <span className="mt-1 block text-xs text-red-600">{error}</span>}
+      {error && <span className="mt-1.5 block text-xs text-danger">{error}</span>}
     </label>
   );
-}
-
-function inputClass(error?: string) {
-  return `w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-900/10 ${
-    error ? "border-red-300 bg-red-50/40" : "border-zinc-300"
-  }`;
 }
