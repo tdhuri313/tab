@@ -1,136 +1,111 @@
-"use client";
-
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useLayoutEffect, useRef, useState } from "react";
-import PreviewCard from "@/components/PreviewCard";
-import { type InvoiceDraft, parseInvoice } from "@/lib/parseInvoice";
+import { connection } from "next/server";
+import { Suspense } from "react";
+import { ArrowRight, Sparkle } from "@/components/icons";
+import SiteHeader from "@/components/SiteHeader";
+import { btnPrimary, btnText, eyebrow } from "@/components/ui";
+import { formatMoney } from "@/lib/format";
+import { listInvoices } from "@/lib/invoices";
+import { summarize } from "@/lib/invoiceStatus";
 
-// The page is a small state machine: type → review → (sending). Once it's sent
-// we navigate to the dashboard, which shows the confirmation.
-type Step =
-  | { kind: "input" }
-  | { kind: "preview"; draft: InvoiceDraft; sending: boolean; error?: string };
-
-const EXAMPLE = "Bill Sarah Lee sarah@email.com $400 for logo design due Friday";
-
-// With cacheComponents on, Next doesn't unmount this page when you leave it:
-// it hides it in a React <Activity>, so useState survives the round trip.
-// Keying the composer on bfcacheId gives us the reset rules we want:
-//   - Link / router.push to "/" (e.g. "New invoice") → new id → fresh composer
-//   - browser Back/Forward → same id → the draft is restored
-export default function Home() {
-  const { bfcacheId } = useRouter();
-
+/**
+ * GET / — the start screen. Everything here is static (prerendered) except
+ * the "who owes you" pill, which reads Stripe at request time inside
+ * <Suspense> so it never holds up the rest of the page.
+ */
+export default function StartPage() {
   return (
-    <main className="mx-auto w-full max-w-xl px-4 py-16">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Tab</h1>
-        <Link href="/invoices" className="text-sm text-zinc-500 underline-offset-2 hover:text-zinc-900 hover:underline">
-          View invoices →
-        </Link>
-      </div>
-      <p className="mb-8 mt-1 text-sm text-zinc-500">Describe the invoice in a sentence. We&apos;ll do the rest.</p>
+    <div className="relative isolate flex flex-1 flex-col overflow-hidden">
+      <Blobs />
+      <SiteHeader />
 
-      <Composer key={bfcacheId} />
-    </main>
+      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center px-4 pb-16 pt-8 text-center sm:pt-12">
+        <p
+          className={`${eyebrow} inline-flex items-center gap-2 rounded-full border border-line bg-white/70 px-4 py-1.5 text-purple`}
+        >
+          <Sparkle className="size-3.5" />
+          Invoicing, without the paperwork
+        </p>
+
+        <h1 className="mt-6 text-5xl leading-[1.05] tracking-tight text-navy sm:text-7xl">Let&apos;s check who owes you.</h1>
+
+        <p className="mt-5 max-w-xl text-lg leading-relaxed text-ink-muted">
+          Bill a client in one sentence. We&apos;ll send the invoice, track the payment, and help you follow up.
+        </p>
+
+        <ExampleSentence />
+
+        <Link href="/new" className={`${btnPrimary} mt-8 px-6 py-3.5`}>
+          Send your first invoice
+          <ArrowRight />
+        </Link>
+        <Link href="/invoices" className={`${btnText} mt-5 px-1 text-sm`}>
+          See my invoices
+        </Link>
+
+        {/* Fixed height so the page doesn't jump when the pill streams in. */}
+        <div className="mt-6 h-8">
+          <Suspense fallback={null}>
+            <OwedPill />
+          </Suspense>
+        </div>
+      </main>
+    </div>
   );
 }
 
-function Composer() {
-  const [text, setText] = useState("");
-  const [step, setStep] = useState<Step>({ kind: "input" });
-  const router = useRouter();
+/** Soft aqua + lavender glow behind the hero. Purely decorative. */
+function Blobs() {
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+      <div className="absolute -left-24 top-16 size-[36rem] rounded-full bg-aqua/40 blur-[120px] sm:left-[10%]" />
+      <div className="absolute -right-24 top-64 size-[34rem] rounded-full bg-lavender/60 blur-[120px] sm:right-[8%]" />
+    </div>
+  );
+}
 
-  // Set once an invoice is sent. When Activity hides the page (we're
-  // navigating to the dashboard), the layout-effect cleanup runs and clears
-  // the composer, so pressing Back doesn't show a sent invoice stuck on
-  // "Sending…". Resetting here rather than before router.push keeps the
-  // button in its "Sending…" state until the dashboard actually appears.
-  const sent = useRef(false);
-  useLayoutEffect(() => {
-    return () => {
-      if (sent.current) {
-        sent.current = false;
-        setText("");
-        setStep({ kind: "input" });
-      }
-    };
-  }, []);
+/**
+ * The "this is how you'd type it" illustration from the design. It's an
+ * example, not an input, so it isn't focusable; screen readers just hear the
+ * sentence.
+ */
+function ExampleSentence() {
+  const chip = "rounded-md bg-lavender/60 px-2 py-0.5 font-semibold";
+  return (
+    <p className="mt-10 flex w-full max-w-2xl flex-wrap items-center justify-center gap-x-1.5 gap-y-2 rounded-card border border-line bg-white/80 px-6 py-5 text-lg text-navy shadow-card backdrop-blur">
+      <span className="sr-only">For example: </span>
+      Bill <span className={chip}>Sarah Lee</span> <span className={chip}>$400</span> for{" "}
+      <span className={chip}>logo design</span> due <span className={chip}>Friday</span>
+      <span aria-hidden className="ml-1 inline-block h-6 w-0.5 bg-purple motion-safe:animate-caret" />
+    </p>
+  );
+}
 
-  function handleParse(e: React.FormEvent) {
-    e.preventDefault();
-    if (!text.trim()) return;
-    setStep({ kind: "preview", draft: parseInvoice(text), sending: false });
+/** "2 overdue · $650 outstanding", from real Stripe invoices. Hidden if nothing is owed or Stripe fails. */
+async function OwedPill() {
+  await connection(); // per request, never prerendered
+
+  let summary;
+  try {
+    const { invoices, now } = await listInvoices();
+    summary = summarize(invoices, now);
+  } catch (err) {
+    console.error("Start page: failed to list invoices:", err);
+    return null;
   }
 
-  async function handleConfirm(draft: InvoiceDraft) {
-    setStep({ kind: "preview", draft, sending: true });
-    try {
-      const res = await fetch("/api/invoices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(draft),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Couldn't send the invoice.");
-      sent.current = true;
-      // Keep the button in its "Sending…" state while the dashboard loads.
-      // ?sent= lets the dashboard highlight the new row.
-      router.push(`/invoices?sent=${encodeURIComponent(data.id)}`);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Couldn't send the invoice.";
-      setStep({ kind: "preview", draft, sending: false, error: message });
-    }
-  }
+  const { outstanding, overdue, currency } = summary;
+  if (outstanding.count === 0) return null;
 
   return (
-    <>
-      {step.kind === "input" && (
-        <form onSubmit={handleParse} className="space-y-3">
-          <textarea
-            autoFocus
-            rows={3}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              // Enter submits; Shift+Enter makes a new line.
-              if (e.key === "Enter" && !e.shiftKey) handleParse(e);
-            }}
-            placeholder={EXAMPLE}
-            className="w-full resize-none rounded-xl border border-zinc-300 bg-white p-4 text-base outline-none focus:ring-2 focus:ring-zinc-900/10"
-          />
-          <div className="flex items-center justify-between">
-            <button type="button" onClick={() => setText(EXAMPLE)} className="text-xs text-zinc-500 underline-offset-2 hover:underline">
-              Use example
-            </button>
-            <button
-              type="submit"
-              disabled={!text.trim()}
-              className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-40"
-            >
-              Preview
-            </button>
-          </div>
-        </form>
-      )}
-
-      {step.kind === "preview" && (
-        <div className="space-y-3">
-          <PreviewCard
-            draft={step.draft}
-            sending={step.sending}
-            onChange={(draft) => setStep({ kind: "preview", draft, sending: false })}
-            onConfirm={() => handleConfirm(step.draft)}
-            onBack={() => setStep({ kind: "input" })}
-          />
-          {step.error && (
-            <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
-              {step.error}
-            </p>
-          )}
-        </div>
-      )}
-    </>
+    <Link
+      href="/invoices"
+      className="inline-flex items-center gap-2 rounded-full bg-aqua-soft px-4 py-1.5 text-xs text-navy transition-colors hover:bg-aqua/50"
+    >
+      {overdue.count > 0 && <span aria-hidden className="size-1.5 rounded-full bg-danger" />}
+      <strong className="font-semibold">{overdue.count > 0 ? `${overdue.count} overdue` : `${outstanding.count} open`}</strong>
+      <span aria-hidden>·</span>
+      {formatMoney(outstanding.cents, currency, { short: true })} outstanding
+    </Link>
   );
 }
