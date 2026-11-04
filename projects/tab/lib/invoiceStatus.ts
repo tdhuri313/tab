@@ -20,6 +20,8 @@ export type DashboardInvoice = {
   closedAt: number | null;
   created: number;
   hostedUrl: string | null;
+  /** When the last reminder was approved and sent (from invoice metadata). */
+  lastReminderAt: number | null;
 };
 
 /**

@@ -2,8 +2,9 @@ import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
 import LiveInvoiceUpdates from "@/components/LiveInvoiceUpdates";
+import ReminderPanel from "@/components/ReminderPanel";
 import StatusBadge from "@/components/StatusBadge";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, formatTimeAgo } from "@/lib/format";
 import { listInvoices } from "@/lib/invoices";
 import type { DashboardInvoice } from "@/lib/invoiceStatus";
 
@@ -46,8 +47,9 @@ async function InvoiceTable({ searchParams }: { searchParams: SearchParams }) {
   const sentId = typeof sent === "string" ? sent : undefined;
 
   let invoices: DashboardInvoice[];
+  let now: number;
   try {
-    invoices = await listInvoices();
+    ({ invoices, now } = await listInvoices());
   } catch (err) {
     console.error("Failed to list invoices:", err);
     return (
@@ -88,7 +90,7 @@ async function InvoiceTable({ searchParams }: { searchParams: SearchParams }) {
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {invoices.map((inv) => (
-                <InvoiceRow key={inv.id} invoice={inv} highlight={inv.id === sentId} />
+                <InvoiceRow key={inv.id} invoice={inv} highlight={inv.id === sentId} now={now} />
               ))}
             </tbody>
           </table>
@@ -98,7 +100,7 @@ async function InvoiceTable({ searchParams }: { searchParams: SearchParams }) {
   );
 }
 
-function InvoiceRow({ invoice: inv, highlight }: { invoice: DashboardInvoice; highlight: boolean }) {
+function InvoiceRow({ invoice: inv, highlight, now }: { invoice: DashboardInvoice; highlight: boolean; now: number }) {
   const muted = inv.status === "void";
   return (
     <tr className={`${highlight ? "bg-emerald-50/60" : ""} ${muted ? "text-zinc-400" : ""}`}>
@@ -120,6 +122,24 @@ function InvoiceRow({ invoice: inv, highlight }: { invoice: DashboardInvoice; hi
       <td className="whitespace-nowrap px-4 py-3">{inv.dueDate ? formatDueDate(inv.dueDate) : "—"}</td>
       <td className="px-4 py-3">
         <StatusBadge status={inv.status} />
+        {inv.status === "overdue" && inv.dueDate !== null && (
+          <div className="mt-1.5 flex flex-col items-start gap-1">
+            <ReminderPanel
+              invoiceId={inv.id}
+              invoiceNumber={inv.number}
+              clientName={inv.clientName}
+              amountCents={inv.amountCents}
+              currency={inv.currency}
+              description={inv.description}
+              dueDate={inv.dueDate}
+            />
+            {inv.lastReminderAt !== null && (
+              <span className="whitespace-nowrap text-xs text-zinc-500">
+                Reminded {formatTimeAgo(inv.lastReminderAt, now)}
+              </span>
+            )}
+          </div>
+        )}
       </td>
     </tr>
   );
