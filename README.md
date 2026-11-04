@@ -102,6 +102,7 @@ STRIPE_SECRET_KEY=sk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...   # printed by `stripe listen` below
 UPSTASH_REDIS_REST_URL=https://...
 UPSTASH_REDIS_REST_TOKEN=...
+APP_PASSWORD=...                  # shared password for the login page
 ```
  
 Run the app and forward webhooks:
@@ -120,13 +121,16 @@ app/
   page.tsx               Start screen
   new/                   Sentence → preview → send
   invoices/              Dashboard
+  login/                 Password gate (APP_PASSWORD)
   api/invoices/          Create and send invoices (server-side)
   api/webhooks/          Verified Stripe webhook endpoint
   api/events/            Recent payment events for the dashboard to poll
 lib/
+  auth.ts                Password cookie helpers
   parseInvoice.ts        Sentence parser and validation
   stripe.ts              Server-only Stripe client
   invoices.ts            Status and urgency logic
+proxy.ts                 Requires login everywhere except /api/webhooks
 components/              Preview card, status badges, reminder drawer, toast
 design/                  Figma screens
 ```

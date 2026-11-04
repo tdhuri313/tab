@@ -58,7 +58,8 @@ export async function POST(request: Request) {
       invoice: invoiceId,
       amount: amountCents,
       currency: "usd",
-      description: draft.description.trim(),
+      // "logo design" → "Logo design". Only the first letter, so "iOS app" stays as typed.
+      description: capitalizeFirst(draft.description.trim()),
     });
 
     // 5. Finalize (locks it and assigns a number + hosted URL), then email it.
@@ -85,6 +86,10 @@ export async function POST(request: Request) {
     console.error(err);
     return Response.json({ error: "Something went wrong creating the invoice." }, { status: 500 });
   }
+}
+
+function capitalizeFirst(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /** Pull only the fields we expect out of an unknown body, as strings. */
