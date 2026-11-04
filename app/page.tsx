@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import PreviewCard from "@/components/PreviewCard";
 import { type InvoiceDraft, parseInvoice } from "@/lib/parseInvoice";
 
@@ -14,10 +14,49 @@ type Step =
 
 const EXAMPLE = "Bill Sarah Lee sarah@email.com $400 for logo design due Friday";
 
+// With cacheComponents on, Next doesn't unmount this page when you leave it:
+// it hides it in a React <Activity>, so useState survives the round trip.
+// Keying the composer on bfcacheId gives us the reset rules we want:
+//   - Link / router.push to "/" (e.g. "New invoice") → new id → fresh composer
+//   - browser Back/Forward → same id → the draft is restored
 export default function Home() {
+  const { bfcacheId } = useRouter();
+
+  return (
+    <main className="mx-auto w-full max-w-xl px-4 py-16">
+      <div className="flex items-baseline justify-between">
+        <h1 className="text-2xl font-semibold tracking-tight">Tab</h1>
+        <Link href="/invoices" className="text-sm text-zinc-500 underline-offset-2 hover:text-zinc-900 hover:underline">
+          View invoices →
+        </Link>
+      </div>
+      <p className="mb-8 mt-1 text-sm text-zinc-500">Describe the invoice in a sentence. We&apos;ll do the rest.</p>
+
+      <Composer key={bfcacheId} />
+    </main>
+  );
+}
+
+function Composer() {
   const [text, setText] = useState("");
   const [step, setStep] = useState<Step>({ kind: "input" });
   const router = useRouter();
+
+  // Set once an invoice is sent. When Activity hides the page (we're
+  // navigating to the dashboard), the layout-effect cleanup runs and clears
+  // the composer, so pressing Back doesn't show a sent invoice stuck on
+  // "Sending…". Resetting here rather than before router.push keeps the
+  // button in its "Sending…" state until the dashboard actually appears.
+  const sent = useRef(false);
+  useLayoutEffect(() => {
+    return () => {
+      if (sent.current) {
+        sent.current = false;
+        setText("");
+        setStep({ kind: "input" });
+      }
+    };
+  }, []);
 
   function handleParse(e: React.FormEvent) {
     e.preventDefault();
@@ -35,6 +74,7 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Couldn't send the invoice.");
+      sent.current = true;
       // Keep the button in its "Sending…" state while the dashboard loads.
       // ?sent= lets the dashboard highlight the new row.
       router.push(`/invoices?sent=${encodeURIComponent(data.id)}`);
@@ -45,15 +85,7 @@ export default function Home() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-xl px-4 py-16">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Tab</h1>
-        <Link href="/invoices" className="text-sm text-zinc-500 underline-offset-2 hover:text-zinc-900 hover:underline">
-          View invoices →
-        </Link>
-      </div>
-      <p className="mb-8 mt-1 text-sm text-zinc-500">Describe the invoice in a sentence. We&apos;ll do the rest.</p>
-
+    <>
       {step.kind === "input" && (
         <form onSubmit={handleParse} className="space-y-3">
           <textarea
@@ -99,6 +131,6 @@ export default function Home() {
           )}
         </div>
       )}
-    </main>
+    </>
   );
 }
