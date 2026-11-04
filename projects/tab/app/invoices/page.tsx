@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
+import LiveInvoiceUpdates from "@/components/LiveInvoiceUpdates";
 import StatusBadge from "@/components/StatusBadge";
+import { formatMoney } from "@/lib/format";
 import { listInvoices } from "@/lib/invoices";
 import type { DashboardInvoice } from "@/lib/invoiceStatus";
 
@@ -30,6 +32,9 @@ export default function InvoicesPage({ searchParams }: { searchParams: SearchPar
       <Suspense fallback={<TableSkeleton />}>
         <InvoiceTable searchParams={searchParams} />
       </Suspense>
+
+      {/* Polls for webhook events; refreshes the table and shows toasts. */}
+      <LiveInvoiceUpdates />
     </main>
   );
 }
@@ -128,10 +133,6 @@ function TableSkeleton() {
       ))}
     </div>
   );
-}
-
-function formatMoney(cents: number, currency: string) {
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(cents / 100);
 }
 
 /**
