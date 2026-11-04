@@ -20,6 +20,26 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Testing overdue invoices (reminders)
+
+Stripe won't create an invoice with a past due date, so use a **test clock**
+that starts in the past. The dashboard compares due dates to the real clock,
+so the invoice shows as Overdue immediately. In Git Bash:
+
+```bash
+NOW=$(date +%s); START=$((NOW - 30*86400)); DUE=$((START + 7*86400))
+stripe test_helpers test_clocks create --frozen-time=$START
+stripe customers create --name="Client" --email="client+$NOW@example.com" --test-clock=clock_…
+stripe invoices create --customer=cus_… --collection-method=send_invoice --due-date=$DUE \
+  --pending-invoice-items-behavior=exclude --auto-advance=false --currency=usd
+stripe invoiceitems create --customer=cus_… --invoice=in_… --amount=40000 --currency=usd --description="…"
+stripe invoices finalize_invoice in_…
+```
+
+`invoices.list` hides test-clock invoices, so `lib/invoices.ts` fetches them
+separately (test mode only). Test mode never sends emails; confirm a reminder
+via `invoice.sent` in `stripe listen` and the invoice's metadata.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
