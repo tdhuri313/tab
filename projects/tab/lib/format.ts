@@ -10,3 +10,13 @@ export function formatMoney(cents: number, currency: string, { short = false } =
     minimumFractionDigits: wholeOnly ? 0 : 2,
   }).format(cents / 100);
 }
+
+/** Unix seconds → "just now", "5 minutes ago", "yesterday", "2 days ago". */
+export function formatTimeAgo(thenSeconds: number, nowSeconds: number) {
+  const diff = Math.max(0, nowSeconds - thenSeconds);
+  if (diff < 60) return "just now";
+  const rtf = new Intl.RelativeTimeFormat("en-US", { numeric: "auto" });
+  if (diff < 3_600) return rtf.format(-Math.floor(diff / 60), "minute");
+  if (diff < 86_400) return rtf.format(-Math.floor(diff / 3_600), "hour");
+  return rtf.format(-Math.floor(diff / 86_400), "day");
+}
