@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { formatMoney } from "@/lib/format";
+import { Check, Close } from "@/components/icons";
+import { formatMoney, formatTimeAgo } from "@/lib/format";
 // `import type` is erased at build time, so this doesn't pull the server-only
 // module (or Redis) into the browser bundle.
 import type { PaymentEvent } from "@/lib/paymentEvents";
@@ -12,6 +13,9 @@ const TOAST_MS = 6_000;
 // Event ids whose toast has been shown, shared by every tab via localStorage.
 const SHOWN_KEY = "tab:shown-payment-events";
 const SHOWN_MAX = 100;
+
+/** A payment event plus when this tab noticed it, for "just now" / "2 minutes ago". */
+type ToastEvent = PaymentEvent & { seenAt: number };
 
 /**
  * Polls /api/events while the dashboard is open. When a new payment event
@@ -25,7 +29,7 @@ const SHOWN_MAX = 100;
  */
 export default function LiveInvoiceUpdates() {
   const router = useRouter();
-  const [toasts, setToasts] = useState<PaymentEvent[]>([]);
+  const [toasts, setToasts] = useState<ToastEvent[]>([]);
 
   useEffect(() => {
     let known: Set<string> | null = null; // null until the first poll
@@ -67,7 +71,8 @@ export default function LiveInvoiceUpdates() {
       const toShow = fresh.filter((e) => !shown.includes(e.id)).reverse(); // oldest first
       if (toShow.length > 0) {
         writeShown([...shown, ...toShow.map((e) => e.id)]);
-        setToasts((current) => [...current, ...toShow]);
+        const seenAt = Math.floor(Date.now() / 1000);
+        setToasts((current) => [...current, ...toShow.map((e) => ({ ...e, seenAt }))]);
       }
       // Re-run the server component so the table comes fresh from Stripe.
       router.refresh();
@@ -91,7 +96,9 @@ export default function LiveInvoiceUpdates() {
   return (
     <div
       aria-live="polite"
-      className="pointer-events-none fixed inset-x-4 bottom-4 z-50 flex flex-col items-end gap-2 sm:left-auto sm:w-80"
+      // Bottom-right and out of the page flow, so it never stacks with the
+      // "Invoice sent" banner at the top of the dashboard.
+      className="pointer-events-none fixed inset-x-4 bottom-4 z-50 flex flex-col items-end gap-2 sm:left-auto sm:w-[22rem]"
     >
       {toasts.map((t) => (
         <Toast key={t.id} event={t} onDismiss={() => dismiss(t.id)} />
@@ -100,7 +107,7 @@ export default function LiveInvoiceUpdates() {
   );
 }
 
-function Toast({ event, onDismiss }: { event: PaymentEvent; onDismiss: () => void }) {
+function Toast({ event, onDismiss }: { event: ToastEvent; onDismiss: () => void }) {
   useEffect(() => {
     const t = setTimeout(onDismiss, TOAST_MS);
     return () => clearTimeout(t);
@@ -110,19 +117,34 @@ function Toast({ event, onDismiss }: { event: PaymentEvent; onDismiss: () => voi
   }, []);
 
   const money = formatMoney(event.amountCents, event.currency, { short: true });
+  const ago = formatTimeAgo(event.created, event.seenAt);
   const paid = event.kind === "paid";
-  const message = paid ? `${event.clientName} just paid ${money}.` : `Payment from ${event.clientName} failed (${money}).`;
 
   return (
     <div
       role="status"
-      className={`pointer-events-auto flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-lg ${
-        paid ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-red-200 bg-red-50 text-red-900"
+      className={`pointer-events-auto flex w-full items-center gap-3 rounded-card border px-4 py-3.5 shadow-pop motion-safe:animate-toast-in ${
+        paid ? "border-aqua bg-aqua-soft" : "border-danger/30 bg-danger-soft"
       }`}
     >
-      <p className="flex-1">{message}</p>
-      <button onClick={onDismiss} aria-label="Dismiss" className="opacity-60 hover:opacity-100">
-        ×
+      <span
+        className={`grid size-9 shrink-0 place-items-center rounded-full ${paid ? "bg-aqua text-navy" : "bg-white text-danger"}`}
+      >
+        {paid ? <Check /> : <Close />}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-navy">
+          {paid ? `${event.clientName} just paid ${money}` : `Payment from ${event.clientName} failed`}
+        </p>
+        <p className="text-xs text-ink-muted">{paid ? ago : `${money} · ${ago}`}</p>
+      </div>
+      <button
+        type="button"
+        onClick={onDismiss}
+        aria-label="Dismiss"
+        className="grid size-8 shrink-0 place-items-center rounded-control text-ink-muted transition-colors hover:bg-white/70 hover:text-navy"
+      >
+        <Close />
       </button>
     </div>
   );

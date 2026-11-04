@@ -63,6 +63,7 @@ function toRow(inv: Stripe.Invoice, now: number): DashboardInvoice {
     closedAt: t.paid_at ?? t.voided_at ?? t.marked_uncollectible_at,
     created: inv.created,
     hostedUrl: inv.hosted_invoice_url ?? null,
+    pdfUrl: inv.invoice_pdf ?? null,
     lastReminderAt: parseTimestamp(inv.metadata?.[REMINDER_KEYS.sentAt]),
   };
 }
