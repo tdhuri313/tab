@@ -6,7 +6,11 @@ Type *"Bill Sarah Lee sarah@email.com $400 for logo design due Friday"* and Tab 
  
 **Live demo:** https://tab-ejp7.vercel.app *(Stripe test mode: pay with card `4242 4242 4242 4242`, any future date, any CVC)*
  
-![Tab demo](design/demo.gif)
+
+
+https://github.com/user-attachments/assets/042d525a-3261-48fa-bb4f-a7b694b25e8a
+
+
  
 ---
  
